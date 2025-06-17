@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DxPathRendering", "DxPathRe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibDxPathRendering", "LibDxPathRendering\LibDxPathRendering.csproj", "{2DB11408-4DD3-4F77-BAA6-3955D54BFC51}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PerformanceTest", "PerformanceTest\PerformanceTest.csproj", "{46A7EF75-0CB5-467B-979C-DEE34C54FEE3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{2DB11408-4DD3-4F77-BAA6-3955D54BFC51}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2DB11408-4DD3-4F77-BAA6-3955D54BFC51}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2DB11408-4DD3-4F77-BAA6-3955D54BFC51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{46A7EF75-0CB5-467B-979C-DEE34C54FEE3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{46A7EF75-0CB5-467B-979C-DEE34C54FEE3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{46A7EF75-0CB5-467B-979C-DEE34C54FEE3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{46A7EF75-0CB5-467B-979C-DEE34C54FEE3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

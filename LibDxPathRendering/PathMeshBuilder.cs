@@ -55,7 +55,9 @@ namespace DxPathRendering
         {
             // 没有点或少于3个点时无法形成有效的多边形
             if (_figurePoints.Count < 3)
-                return;
+            {
+                throw new InvalidOperationException("A figure must have at least 3 points to be closed.");
+            }
 
             if (_figureStroke)
             {
@@ -290,7 +292,11 @@ namespace DxPathRendering
             verticesAndColors = _finalVerticesAndColors.ToArray();
             indices = _finalIndices.ToArray();
 
-            // 清空最终结果，为下一次构建做准备
+            Reset();
+        }
+
+        public void Reset()
+        {
             _finalVerticesAndColors.Clear();
             _finalIndices.Clear();
         }
