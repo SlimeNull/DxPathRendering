@@ -24,7 +24,7 @@ namespace DxPathRendering
         private unsafe void Window_Loaded(object sender, RoutedEventArgs e)
         {
             PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
-            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 0.5f);
+            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 0.1f);
             pathMeshBuilder.AddPoint(-0.5f, -0.5f);
             pathMeshBuilder.AddPoint(0.5f, -0.5f);
             pathMeshBuilder.AddPoint(0.5f, 0.5f);

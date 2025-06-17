@@ -34,7 +34,7 @@ namespace DxPathRendering
         {
             _figurePoints.Add(new Point(x, y));
         }
-
+        
         public void CloseFigure()
         {
             // 没有点或少于3个点时无法形成有效的多边形
@@ -48,16 +48,24 @@ namespace DxPathRendering
                 List<Point> innerPoints = new List<Point>();
                 List<Point> outerPoints = new List<Point>();
 
-                // 生成内外点
+                // 首先判断多边形的方向（顺时针或逆时针）
+                bool isClockwise = IsClockwise(_figurePoints);
+
+                // 生成内外点 - 使用多边形偏移算法
                 for (int i = 0; i < _figurePoints.Count; i++)
                 {
-                    Point current = _figurePoints[i];
-                    Point prev = _figurePoints[(i + _figurePoints.Count - 1) % _figurePoints.Count];
-                    Point next = _figurePoints[(i + 1) % _figurePoints.Count];
+                    int prevIndex = (i + _figurePoints.Count - 1) % _figurePoints.Count;
+                    int nextIndex = (i + 1) % _figurePoints.Count;
 
-                    // 计算前后向量的平均方向作为法向量
+                    Point prev = _figurePoints[prevIndex];
+                    Point current = _figurePoints[i];
+                    Point next = _figurePoints[nextIndex];
+
+                    // 计算当前边的方向向量
                     float dx1 = current.X - prev.X;
                     float dy1 = current.Y - prev.Y;
+
+                    // 计算下一条边的方向向量
                     float dx2 = next.X - current.X;
                     float dy2 = next.Y - current.Y;
 
@@ -70,33 +78,56 @@ namespace DxPathRendering
                         dx1 /= len1;
                         dy1 /= len1;
                     }
+
                     if (len2 > 0)
                     {
                         dx2 /= len2;
                         dy2 /= len2;
                     }
 
-                    // 计算法向量（垂直于线段）
+                    // 计算两条边的法向量（始终指向多边形外部）
                     float nx1 = -dy1;
                     float ny1 = dx1;
                     float nx2 = -dy2;
                     float ny2 = dx2;
 
-                    // 平均法向量
-                    float nx = (nx1 + nx2) * 0.5f;
-                    float ny = (ny1 + ny2) * 0.5f;
-
-                    // 调整法向量长度
-                    float norm = (float)Math.Sqrt(nx * nx + ny * ny);
-                    if (norm > 0)
+                    if (!isClockwise)
                     {
-                        nx /= norm;
-                        ny /= norm;
+                        // 如果是逆时针，翻转法向量方向
+                        nx1 = -nx1;
+                        ny1 = -ny1;
+                        nx2 = -nx2;
+                        ny2 = -ny2;
                     }
 
-                    // 内外点
-                    innerPoints.Add(new Point(current.X - nx * halfThickness, current.Y - ny * halfThickness));
-                    outerPoints.Add(new Point(current.X + nx * halfThickness, current.Y + ny * halfThickness));
+                    // 计算角平分线向量
+                    float nx = nx1 + nx2;
+                    float ny = ny1 + ny2;
+                    float nlen = (float)Math.Sqrt(nx * nx + ny * ny);
+
+                    if (nlen > 0.0001f)  // 避免除以零
+                    {
+                        nx /= nlen;
+                        ny /= nlen;
+
+                        // 计算平分线长度修正因子
+                        float sinHalfAngle = nlen / 2;
+                        float offsetFactor = (sinHalfAngle != 0) ? (1.0f / sinHalfAngle) : 1.0f;
+
+                        // 应用偏移 - 外点是向外偏移，内点是向内偏移
+                        float offsetX = nx * halfThickness * offsetFactor;
+                        float offsetY = ny * halfThickness * offsetFactor;
+
+                        // 注意：外点和内点的生成顺序固定，不受多边形方向影响
+                        outerPoints.Add(new Point(current.X + offsetX, current.Y + offsetY));
+                        innerPoints.Add(new Point(current.X - offsetX, current.Y - offsetY));
+                    }
+                    else
+                    {
+                        // 如果角平分线无法计算，则使用前一条边的法向量
+                        outerPoints.Add(new Point(current.X + nx1 * halfThickness, current.Y + ny1 * halfThickness));
+                        innerPoints.Add(new Point(current.X - nx1 * halfThickness, current.Y - ny1 * halfThickness));
+                    }
                 }
 
                 // 添加所有内外点顶点
@@ -183,6 +214,20 @@ namespace DxPathRendering
             // 清空当前图形点集，为下一次做准备
             _figurePoints.Clear();
         }
+
+        // 判断多边形是否为顺时针方向
+        private bool IsClockwise(List<Point> points)
+        {
+            double sum = 0;
+            for (int i = 0; i < points.Count; i++)
+            {
+                Point current = points[i];
+                Point next = points[(i + 1) % points.Count];
+                sum += (next.X - current.X) * (next.Y + current.Y);
+            }
+            return sum > 0;
+        }
+
 
         public void Build(out MeshVertexAndColor[] verticesAndColors, out MeshTriangleIndices[] indices)
         {
