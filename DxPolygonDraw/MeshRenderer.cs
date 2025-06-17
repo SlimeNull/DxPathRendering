@@ -31,6 +31,7 @@ namespace DxPathRendering
         ComPtr<ID3D11VertexShader> _vertexShader;
         ComPtr<ID3D11PixelShader> _pixelShader;
         ComPtr<ID3D11InputLayout> _inputLayout;
+        ComPtr<ID3D11Buffer> _constantBuffer;
 
         private int _inputWidth;
         private int _inputHeight;
@@ -51,6 +52,11 @@ namespace DxPathRendering
         private string GetShaderCode()
         {
             return """
+                cbuffer ScreenBuffer : register(b0)
+                {
+                    float2 screenSize;  // width, height
+                };
+
                 struct vs_in 
                 {
                     float2 position : POSITION;
@@ -65,11 +71,15 @@ namespace DxPathRendering
 
                 vs_out vs_main(vs_in input) 
                 {
-                    vs_out output = 
-                    {
-                        float4(input.position, 0, 1.0),
-                        input.color
-                    };
+                    vs_out output;
+                    
+                    // Convert from screen coordinates (0 to width/height) to clip space (-1 to 1)
+                    float2 normalizedPos;
+                    normalizedPos.x = (input.position.x / screenSize.x) * 2.0f - 1.0f;
+                    normalizedPos.y = 1.0f - (input.position.y / screenSize.y) * 2.0f; // 反转Y轴，因为DirectX中Y轴向下
+                    
+                    output.position = float4(normalizedPos, 0.0f, 1.0f);
+                    output.color = input.color;
 
                     return output;
                 }
@@ -190,6 +200,17 @@ namespace DxPathRendering
                     _device.CreateInputLayout(in inputElementDesc[0], 2, _vertexShaderCode.GetBufferPointer(), _vertexShaderCode.GetBufferSize(), ref _inputLayout);
                 }
             }
+
+            // 创建常量缓冲区
+            BufferDesc constBufferDesc = new BufferDesc
+            {
+                BindFlags = (uint)BindFlag.ConstantBuffer,
+                ByteWidth = 16, // 对齐到16字节（float2 = 8字节，但常量缓冲区需要16字节对齐）
+                CPUAccessFlags = (uint)CpuAccessFlag.Write,
+                Usage = Usage.Dynamic
+            };
+
+            _device.CreateBuffer(in constBufferDesc, ref Unsafe.NullRef<SubresourceData>(), ref _constantBuffer);
         }
 
         public void SetMesh(ReadOnlySpan<MeshVertexAndColor> verticesAndColors, ReadOnlySpan<MeshTriangleIndices> indices)
@@ -256,7 +277,17 @@ namespace DxPathRendering
             {
                 throw new ArgumentException("Size not match", nameof(bgraOutput));
             }
-            
+
+            // 更新常量缓冲区中的屏幕尺寸
+            MappedSubresource mappedConstBuffer = default;
+            _deviceContext.Map(_constantBuffer, 0, Map.WriteDiscard, 0, ref mappedConstBuffer);
+
+            float* screenSizeData = (float*)mappedConstBuffer.PData;
+            screenSizeData[0] = OutputWidth;
+            screenSizeData[1] = OutputHeight;
+
+            _deviceContext.Unmap(_constantBuffer, 0);
+
             // 创建一个描述无剔除的光栅化状态
             RasterizerDesc rastDesc = new RasterizerDesc
             {
@@ -280,15 +311,15 @@ namespace DxPathRendering
 
             var viewport = new Viewport(0, 0, OutputWidth, OutputHeight, 0, 1);
 
-            // clear output
-            //_deviceContext.ClearRenderTargetView(renderTargetView, ref _background[0]);
-
             _deviceContext.RSSetViewports(1, in viewport);
             _deviceContext.OMSetRenderTargets(1, ref renderTargetView, ref Unsafe.NullRef<ID3D11DepthStencilView>());
             _deviceContext.RSSetState(rasterizerState);
 
             _deviceContext.VSSetShader(_vertexShader, ref Unsafe.NullRef<ComPtr<ID3D11ClassInstance>>(), 0);
             _deviceContext.PSSetShader(_pixelShader, ref Unsafe.NullRef<ComPtr<ID3D11ClassInstance>>(), 0);
+
+            // 设置常量缓冲区到顶点着色器
+            _deviceContext.VSSetConstantBuffers(0, 1, ref _constantBuffer);
 
             _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
             _deviceContext.IASetInputLayout(_inputLayout);
@@ -337,6 +368,7 @@ namespace DxPathRendering
             _vertexShader.DisposeIfNotNull();
             _pixelShader.DisposeIfNotNull();
             _inputLayout.DisposeIfNotNull();
+            _constantBuffer.DisposeIfNotNull();
 
             if (_instanceCount == 0)
             {

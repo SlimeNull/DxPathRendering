@@ -24,12 +24,12 @@ namespace DxPathRendering
         private unsafe void Window_Loaded(object sender, RoutedEventArgs e)
         {
             PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
-            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 0.1f);
+            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 10f);
 
             for (int i = 0; i < 5; i++)
             {
                 var rad = MathF.PI / 2 + MathF.PI * 2 / 5 * i;
-                pathMeshBuilder.AddPoint(MathF.Cos(rad) * 0.5f, MathF.Sin(rad) * 0.5f);
+                pathMeshBuilder.AddPoint(200 + MathF.Cos(rad) * 100f, 200 + MathF.Sin(rad) * 100f);
             }
 
             pathMeshBuilder.CloseFigure();
