@@ -304,6 +304,9 @@ namespace DxPathRendering
         {
             EnsureInitialized();
 
+            _vertexBuffer.DisposeIfNotNull();
+            _indexBuffer.DisposeIfNotNull();
+
             var castedVerticesAndColors = MemoryMarshal.Cast<MeshVertexAndColor, float>(verticesAndColors);
             var castedIndices = MemoryMarshal.Cast<MeshTriangleIndices, uint>(indices);
 
