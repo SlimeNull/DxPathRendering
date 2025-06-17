@@ -20,6 +20,18 @@ namespace DxPathRendering
         private List<MeshVertexAndColor> _finalVerticesAndColors = new List<MeshVertexAndColor>();
         private List<MeshTriangleIndices> _finalIndices = new List<MeshTriangleIndices>();
 
+        private static bool IsClockwise(List<Point> points)
+        {
+            double sum = 0;
+            for (int i = 0; i < points.Count; i++)
+            {
+                Point current = points[i];
+                Point next = points[(i + 1) % points.Count];
+                sum += (next.X - current.X) * (next.Y + current.Y);
+            }
+            return sum > 0;
+        }
+
         public void BeginFigure(bool stroke, bool fill, MeshColor strokeColor, MeshColor fillColor, float strokeThickness)
         {
             _figureStroke = stroke;
@@ -34,7 +46,7 @@ namespace DxPathRendering
         {
             _figurePoints.Add(new Point(x, y));
         }
-        
+
         public void CloseFigure()
         {
             // 没有点或少于3个点时无法形成有效的多边形
@@ -118,7 +130,6 @@ namespace DxPathRendering
                         float offsetX = nx * halfThickness * offsetFactor;
                         float offsetY = ny * halfThickness * offsetFactor;
 
-                        // 注意：外点和内点的生成顺序固定，不受多边形方向影响
                         outerPoints.Add(new Point(current.X + offsetX, current.Y + offsetY));
                         innerPoints.Add(new Point(current.X - offsetX, current.Y - offsetY));
                     }
@@ -161,28 +172,50 @@ namespace DxPathRendering
                     _finalIndices.Add(new MeshTriangleIndices(outerCurrent, innerNext, outerNext));
                 }
 
-                // 如果有填充，使用内点做填充
+                // 如果有填充，使用已经添加的内点做填充
                 if (_figureFill)
                 {
-                    uint fillBaseIndex = (uint)_finalVerticesAndColors.Count;
+                    // 计算内点的起始索引
+                    uint fillBaseIndex = baseIndex + 1; // 内点从baseIndex+1开始，步长为2
 
-                    // 添加所有内点作为填充顶点
-                    foreach (var point in innerPoints)
+                    // 生成填充的三角形索引
+                    // 使用扇形三角化，第一个内点作为中心点
+                    for (uint i = 1; i < _figurePoints.Count - 1; i++)
                     {
-                        _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                            (float)point.X, (float)point.Y,
-                            _figureFillColor.R, _figureFillColor.G, _figureFillColor.B, _figureFillColor.A
+                        _finalIndices.Add(new MeshTriangleIndices(
+                            fillBaseIndex,  // 第一个内点
+                            fillBaseIndex + i * 2,  // 其他内点，步长为2
+                            fillBaseIndex + (i + 1) * 2
                         ));
                     }
 
-                    // 生成填充的三角形索引（假设是凸多边形，使用扇形三角化）
-                    for (uint i = 1; i < innerPoints.Count - 1; i++)
+                    // 如果填充颜色与描边颜色不同，需要额外处理
+                    if (_figureFillColor.R != _figureStrokeColor.R ||
+                        _figureFillColor.G != _figureStrokeColor.G ||
+                        _figureFillColor.B != _figureStrokeColor.B ||
+                        _figureFillColor.A != _figureStrokeColor.A)
                     {
-                        _finalIndices.Add(new MeshTriangleIndices(
-                            fillBaseIndex,
-                            fillBaseIndex + i,
-                            fillBaseIndex + i + 1
-                        ));
+                        // 添加相同位置但使用填充颜色的点
+                        uint colorFillBaseIndex = (uint)_finalVerticesAndColors.Count;
+
+                        // 只添加内点，使用填充颜色
+                        for (int i = 0; i < _figurePoints.Count; i++)
+                        {
+                            _finalVerticesAndColors.Add(new MeshVertexAndColor(
+                                (float)innerPoints[i].X, (float)innerPoints[i].Y,
+                                _figureFillColor.R, _figureFillColor.G, _figureFillColor.B, _figureFillColor.A
+                            ));
+                        }
+
+                        // 用新添加的填充颜色点生成三角形
+                        for (uint i = 1; i < _figurePoints.Count - 1; i++)
+                        {
+                            _finalIndices.Add(new MeshTriangleIndices(
+                                colorFillBaseIndex,
+                                colorFillBaseIndex + i,
+                                colorFillBaseIndex + i + 1
+                            ));
+                        }
                     }
                 }
             }
@@ -214,20 +247,6 @@ namespace DxPathRendering
             // 清空当前图形点集，为下一次做准备
             _figurePoints.Clear();
         }
-
-        // 判断多边形是否为顺时针方向
-        private bool IsClockwise(List<Point> points)
-        {
-            double sum = 0;
-            for (int i = 0; i < points.Count; i++)
-            {
-                Point current = points[i];
-                Point next = points[(i + 1) % points.Count];
-                sum += (next.X - current.X) * (next.Y + current.Y);
-            }
-            return sum > 0;
-        }
-
 
         public void Build(out MeshVertexAndColor[] verticesAndColors, out MeshTriangleIndices[] indices)
         {
