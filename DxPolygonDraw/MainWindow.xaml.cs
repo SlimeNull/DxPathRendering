@@ -52,6 +52,7 @@ namespace DxPathRendering
                     (float)rotateTransform.Value.OffsetX, 
                     (float)rotateTransform.Value.OffsetY));
 
+            renderer.SetAntialiasing(true);
             renderer.SetMesh(verticesAndColors, indices);
             renderer.Render(new Span<byte>((void*)bitmap.BackBuffer, bitmap.BackBufferStride * bitmap.PixelHeight));
 

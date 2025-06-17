@@ -26,6 +26,7 @@ namespace DxPathRendering
         ComPtr<ID3D11DeviceContext> _deviceContext;
         ComPtr<ID3D11Texture2D> _renderTarget;
         ComPtr<ID3D11Texture2D> _outputBuffer;
+        ComPtr<ID3D11Texture2D> _resolveTexture; // 用于MSAA解析的中间纹理
         ComPtr<ID3D10Blob> _vertexShaderCode;
         ComPtr<ID3D10Blob> _pixelShaderCode;
         ComPtr<ID3D11VertexShader> _vertexShader;
@@ -39,6 +40,8 @@ namespace DxPathRendering
         private uint[]? _indices;
         private MatrixTransform _transform;
         private bool _transformSet;
+        private bool _antialiasingEnabled; // 控制抗锯齿是否启用
+        private int _msaaSampleCount; // MSAA采样数量
 
         public int OutputWidth { get; }
         public int OutputHeight { get; }
@@ -52,6 +55,28 @@ namespace DxPathRendering
             // 默认为单位矩阵
             _transform = new MatrixTransform(1, 0, 0, 1, 0, 0);
             _transformSet = false;
+            _antialiasingEnabled = false;
+            _msaaSampleCount = 4; // 默认使用4x MSAA
+        }
+
+        // 添加抗锯齿设置方法
+        public void SetAntialiasing(bool enable)
+        {
+            if (_antialiasingEnabled != enable)
+            {
+                _antialiasingEnabled = enable;
+
+                // 如果已经初始化了设备和资源，需要释放并重新创建它们
+                if (_device.Handle != null)
+                {
+                    // 释放与渲染相关的资源
+                    _renderTarget.DisposeIfNotNull();
+                    _resolveTexture.DisposeIfNotNull();
+
+                    // 重新创建渲染目标
+                    CreateRenderTargets();
+                }
+            }
         }
 
         public void SetTransform(MatrixTransform transform)
@@ -63,48 +88,102 @@ namespace DxPathRendering
         private string GetShaderCode()
         {
             return """
-                cbuffer ScreenBuffer : register(b0)
+            cbuffer ScreenBuffer : register(b0)
+            {
+                float2 screenSize;  // width, height
+                float3x3 transform; // 变换矩阵
+            };
+
+            struct vs_in 
+            {
+                float2 position : POSITION;
+                float4 color    : COLOR;
+            };
+
+            struct vs_out
+            {
+                float4 position : SV_POSITION;
+                float4 color    : COLOR;
+            };
+
+            vs_out vs_main(vs_in input) 
+            {
+                vs_out output;
+                
+                // 应用变换矩阵
+                float3 pos = float3(input.position, 1.0f);
+                float3 transformedPos = mul(transform, pos);
+                
+                // Convert from screen coordinates (0 to width/height) to clip space (-1 to 1)
+                float2 normalizedPos;
+                normalizedPos.x = (transformedPos.x / screenSize.x) * 2.0f - 1.0f;
+                normalizedPos.y = 1.0f - (transformedPos.y / screenSize.y) * 2.0f; // 反转Y轴，因为DirectX中Y轴向下
+                
+                output.position = float4(normalizedPos, 0.0f, 1.0f);
+                output.color = input.color;
+
+                return output;
+            }
+
+            float4 ps_main(vs_out input) : SV_TARGET
+            {
+                return float4(input.color.xyz, 1);
+            }
+            """;
+        }
+
+        // 创建渲染目标纹理
+        private void CreateRenderTargets()
+        {
+            // 确保设备已初始化
+            if (_device.Handle == null)
+                return;
+
+            // 创建多重采样渲染目标
+            var renderTargetDesc = new Texture2DDesc()
+            {
+                Width = (uint)OutputWidth,
+                Height = (uint)OutputHeight,
+                ArraySize = 1,
+                BindFlags = (uint)BindFlag.RenderTarget,
+                CPUAccessFlags = 0,
+                Format = Format.FormatB8G8R8A8Unorm,
+                MipLevels = 1,
+                MiscFlags = 0,
+                Usage = Usage.Default,
+            };
+
+            if (_antialiasingEnabled)
+            {
+                // 设置多重采样参数
+                renderTargetDesc.SampleDesc = new SampleDesc((uint)_msaaSampleCount, 0);
+
+                // 创建用于解析MSAA的非多重采样纹理
+                var resolveDesc = new Texture2DDesc()
                 {
-                    float2 screenSize;  // width, height
-                    float3x3 transform; // 变换矩阵
+                    Width = (uint)OutputWidth,
+                    Height = (uint)OutputHeight,
+                    ArraySize = 1,
+                    BindFlags = (uint)(BindFlag.RenderTarget | BindFlag.ShaderResource),
+                    CPUAccessFlags = 0,
+                    Format = Format.FormatB8G8R8A8Unorm,
+                    MipLevels = 1,
+                    MiscFlags = 0,
+                    SampleDesc = new SampleDesc(1, 0), // 不使用多重采样
+                    Usage = Usage.Default,
                 };
 
-                struct vs_in 
-                {
-                    float2 position : POSITION;
-                    float4 color    : COLOR;
-                };
+                _device.CreateTexture2D(in resolveDesc, ref Unsafe.NullRef<SubresourceData>(), ref _resolveTexture);
+            }
+            else
+            {
+                // 不使用多重采样
+                renderTargetDesc.SampleDesc = new SampleDesc(1, 0);
+                _resolveTexture = default; // 确保不使用解析纹理
+            }
 
-                struct vs_out
-                {
-                    float4 position : SV_POSITION;
-                    float4 color    : COLOR;
-                };
-
-                vs_out vs_main(vs_in input) 
-                {
-                    vs_out output;
-                    
-                    // 应用变换矩阵
-                    float3 pos = float3(input.position, 1.0f);
-                    float3 transformedPos = mul(transform, pos);
-                    
-                    // Convert from screen coordinates (0 to width/height) to clip space (-1 to 1)
-                    float2 normalizedPos;
-                    normalizedPos.x = (transformedPos.x / screenSize.x) * 2.0f - 1.0f;
-                    normalizedPos.y = 1.0f - (transformedPos.y / screenSize.y) * 2.0f; // 反转Y轴，因为DirectX中Y轴向下
-                    
-                    output.position = float4(normalizedPos, 0.0f, 1.0f);
-                    output.color = input.color;
-
-                    return output;
-                }
-
-                float4 ps_main(vs_out input) : SV_TARGET
-                {
-                    return float4(input.color.xyz, 1);
-                }
-                """;
+            // 创建渲染目标
+            _device.CreateTexture2D(in renderTargetDesc, ref Unsafe.NullRef<SubresourceData>(), ref _renderTarget);
         }
 
         [MemberNotNull(nameof(_api))]
@@ -128,20 +207,10 @@ namespace DxPathRendering
                 throw new InvalidOperationException("Failed to create device");
             }
 
-            var renderTargetDesc = new Texture2DDesc()
-            {
-                Width = (uint)OutputWidth,
-                Height = (uint)OutputHeight,
-                ArraySize = 1,
-                BindFlags = (uint)BindFlag.RenderTarget,
-                CPUAccessFlags = 0,
-                Format = Format.FormatB8G8R8A8Unorm,
-                MipLevels = 1,
-                MiscFlags = 0,
-                SampleDesc = new SampleDesc(1, 0),
-                Usage = Usage.Default,
-            };
+            // 创建渲染目标纹理
+            CreateRenderTargets();
 
+            // 创建输出缓冲
             var outputBufferDesc = new Texture2DDesc()
             {
                 Width = (uint)OutputWidth,
@@ -156,7 +225,6 @@ namespace DxPathRendering
                 Usage = Usage.Staging,
             };
 
-            _device.CreateTexture2D(in renderTargetDesc, ref Unsafe.NullRef<SubresourceData>(), ref _renderTarget);
             _device.CreateTexture2D(in outputBufferDesc, ref Unsafe.NullRef<SubresourceData>(), ref _outputBuffer);
 
             string shaderCode = GetShaderCode();
@@ -195,23 +263,23 @@ namespace DxPathRendering
                     InputElementDesc[] inputElementDesc =
                     [
                         new InputElementDesc()
-                        {
-                            SemanticName = (byte*)pSematicNamePosition,
-                            SemanticIndex = 0,
-                            Format = Format.FormatR32G32Float,
-                            InputSlot = 0,
-                            InputSlotClass = InputClassification.PerVertexData,
-                        },
-                        new InputElementDesc()
-                        {
-                            SemanticName = (byte*)pSematicNameColor,
-                            SemanticIndex = 0,
-                            Format = Format.FormatR8G8B8A8Unorm,
-                            InputSlot = 0,
-                            InputSlotClass = InputClassification.PerVertexData,
-                            AlignedByteOffset = 2 * sizeof(float),
-                        },
-                    ];
+                    {
+                        SemanticName = (byte*)pSematicNamePosition,
+                        SemanticIndex = 0,
+                        Format = Format.FormatR32G32Float,
+                        InputSlot = 0,
+                        InputSlotClass = InputClassification.PerVertexData,
+                    },
+                    new InputElementDesc()
+                    {
+                        SemanticName = (byte*)pSematicNameColor,
+                        SemanticIndex = 0,
+                        Format = Format.FormatR8G8B8A8Unorm,
+                        InputSlot = 0,
+                        InputSlotClass = InputClassification.PerVertexData,
+                        AlignedByteOffset = 2 * sizeof(float),
+                    },
+                ];
 
                     _device.CreateInputLayout(in inputElementDesc[0], 2, _vertexShaderCode.GetBufferPointer(), _vertexShaderCode.GetBufferSize(), ref _inputLayout);
                 }
@@ -333,7 +401,7 @@ namespace DxPathRendering
 
             _deviceContext.Unmap(_constantBuffer, 0);
 
-            // 创建一个描述无剔除的光栅化状态
+            // 创建一个描述无剔除的光栅化状态，启用抗锯齿
             RasterizerDesc rastDesc = new RasterizerDesc
             {
                 FillMode = FillMode.Solid,
@@ -344,8 +412,8 @@ namespace DxPathRendering
                 SlopeScaledDepthBias = 0.0f,
                 DepthClipEnable = true,
                 ScissorEnable = false,
-                MultisampleEnable = false,
-                AntialiasedLineEnable = false
+                MultisampleEnable = _antialiasingEnabled,  // 根据抗锯齿设置启用多重采样
+                AntialiasedLineEnable = _antialiasingEnabled  // 根据抗锯齿设置启用线条抗锯齿
             };
 
             ComPtr<ID3D11RasterizerState> rasterizerState = default;
@@ -375,9 +443,29 @@ namespace DxPathRendering
             _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in vertexStride, in vertexOffset);
             _deviceContext.IASetIndexBuffer(indexBuffer, Format.FormatR32Uint, 0);
 
-            _deviceContext.DrawIndexed((uint)_indices.Length, 0, 0);
-            _deviceContext.CopyResource(_outputBuffer, _renderTarget);
+            // 清除渲染目标视图
+            //float[] clearColor = new float[4] { 0.0f, 0.0f, 0.0f, 0.0f };
+            //_deviceContext.ClearRenderTargetView(renderTargetView, in clearColor[0]);
 
+            // 绘制
+            _deviceContext.DrawIndexed((uint)_indices.Length, 0, 0);
+
+            // 如果启用抗锯齿，需要先解析MSAA纹理到非MSAA纹理
+            if (_antialiasingEnabled && _resolveTexture.Handle != null)
+            {
+                // 解析多重采样纹理
+                _deviceContext.ResolveSubresource(_resolveTexture, 0, _renderTarget, 0, Format.FormatB8G8R8A8Unorm);
+
+                // 将解析后的纹理复制到输出
+                _deviceContext.CopyResource(_outputBuffer, _resolveTexture);
+            }
+            else
+            {
+                // 不需要解析，直接复制到输出
+                _deviceContext.CopyResource(_outputBuffer, _renderTarget);
+            }
+
+            // 从输出缓冲映射到CPU内存
             MappedSubresource mappedSubResource = default;
             _deviceContext.Map(_outputBuffer, 0, Map.Read, 0, ref mappedSubResource);
 
@@ -410,6 +498,7 @@ namespace DxPathRendering
             _deviceContext.DisposeIfNotNull();
             _renderTarget.DisposeIfNotNull();
             _outputBuffer.DisposeIfNotNull();
+            _resolveTexture.DisposeIfNotNull(); // 释放MSAA解析纹理
             _vertexShader.DisposeIfNotNull();
             _pixelShader.DisposeIfNotNull();
             _inputLayout.DisposeIfNotNull();
@@ -425,4 +514,5 @@ namespace DxPathRendering
             }
         }
     }
+
 }
