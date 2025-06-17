@@ -20,6 +20,10 @@ namespace DxPathRendering
         private List<MeshVertexAndColor> _finalVerticesAndColors = new List<MeshVertexAndColor>();
         private List<MeshTriangleIndices> _finalIndices = new List<MeshTriangleIndices>();
 
+        // 缓存集合 - 重用这些集合以避免GC压力
+        private List<Point> _innerPointsCache = new List<Point>();
+        private List<Point> _outerPointsCache = new List<Point>();
+
         private static bool IsClockwise(List<Point> points)
         {
             double sum = 0;
@@ -57,8 +61,17 @@ namespace DxPathRendering
             {
                 uint baseIndex = (uint)_finalVerticesAndColors.Count;
                 float halfThickness = _figureStrokeThickness / 2f;
-                List<Point> innerPoints = new List<Point>();
-                List<Point> outerPoints = new List<Point>();
+
+                // 清空并重用缓存集合
+                _innerPointsCache.Clear();
+                _outerPointsCache.Clear();
+
+                // 预分配容量以避免动态增长
+                if (_innerPointsCache.Capacity < _figurePoints.Count)
+                {
+                    _innerPointsCache.Capacity = _figurePoints.Count;
+                    _outerPointsCache.Capacity = _figurePoints.Count;
+                }
 
                 // 首先判断多边形的方向（顺时针或逆时针）
                 bool isClockwise = IsClockwise(_figurePoints);
@@ -130,29 +143,44 @@ namespace DxPathRendering
                         float offsetX = nx * halfThickness * offsetFactor;
                         float offsetY = ny * halfThickness * offsetFactor;
 
-                        outerPoints.Add(new Point(current.X + offsetX, current.Y + offsetY));
-                        innerPoints.Add(new Point(current.X - offsetX, current.Y - offsetY));
+                        _outerPointsCache.Add(new Point(current.X + offsetX, current.Y + offsetY));
+                        _innerPointsCache.Add(new Point(current.X - offsetX, current.Y - offsetY));
                     }
                     else
                     {
                         // 如果角平分线无法计算，则使用前一条边的法向量
-                        outerPoints.Add(new Point(current.X + nx1 * halfThickness, current.Y + ny1 * halfThickness));
-                        innerPoints.Add(new Point(current.X - nx1 * halfThickness, current.Y - ny1 * halfThickness));
+                        _outerPointsCache.Add(new Point(current.X + nx1 * halfThickness, current.Y + ny1 * halfThickness));
+                        _innerPointsCache.Add(new Point(current.X - nx1 * halfThickness, current.Y - ny1 * halfThickness));
                     }
                 }
+
+                // 预分配顶点和索引容量以避免动态增长
+                int requiredVertexCapacity = _finalVerticesAndColors.Count + _figurePoints.Count * 2;
+                if (_figureFill && _figureFillColor != _figureStrokeColor)
+                    requiredVertexCapacity += _figurePoints.Count; // 额外的填充点
+
+                if (_finalVerticesAndColors.Capacity < requiredVertexCapacity)
+                    _finalVerticesAndColors.Capacity = requiredVertexCapacity;
+
+                int requiredIndicesCapacity = _finalIndices.Count + _figurePoints.Count * 2;
+                if (_figureFill)
+                    requiredIndicesCapacity += (_figurePoints.Count - 2) * (_figureFillColor != _figureStrokeColor ? 2 : 1);
+
+                if (_finalIndices.Capacity < requiredIndicesCapacity)
+                    _finalIndices.Capacity = requiredIndicesCapacity;
 
                 // 添加所有内外点顶点
                 for (int i = 0; i < _figurePoints.Count; i++)
                 {
                     // 外点
                     _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                        (float)outerPoints[i].X, (float)outerPoints[i].Y,
+                        (float)_outerPointsCache[i].X, (float)_outerPointsCache[i].Y,
                         _figureStrokeColor.R, _figureStrokeColor.G, _figureStrokeColor.B, _figureStrokeColor.A
                     ));
 
                     // 内点
                     _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                        (float)innerPoints[i].X, (float)innerPoints[i].Y,
+                        (float)_innerPointsCache[i].X, (float)_innerPointsCache[i].Y,
                         _figureStrokeColor.R, _figureStrokeColor.G, _figureStrokeColor.B, _figureStrokeColor.A
                     ));
                 }
@@ -202,7 +230,7 @@ namespace DxPathRendering
                         for (int i = 0; i < _figurePoints.Count; i++)
                         {
                             _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                                (float)innerPoints[i].X, (float)innerPoints[i].Y,
+                                (float)_innerPointsCache[i].X, (float)_innerPointsCache[i].Y,
                                 _figureFillColor.R, _figureFillColor.G, _figureFillColor.B, _figureFillColor.A
                             ));
                         }
@@ -223,6 +251,15 @@ namespace DxPathRendering
             {
                 // 直接使用用户添加的点
                 uint baseIndex = (uint)_finalVerticesAndColors.Count;
+
+                // 预分配容量
+                int requiredVertexCapacity = _finalVerticesAndColors.Count + _figurePoints.Count;
+                if (_finalVerticesAndColors.Capacity < requiredVertexCapacity)
+                    _finalVerticesAndColors.Capacity = requiredVertexCapacity;
+
+                int requiredIndicesCapacity = _finalIndices.Count + _figurePoints.Count - 2;
+                if (_finalIndices.Capacity < requiredIndicesCapacity)
+                    _finalIndices.Capacity = requiredIndicesCapacity;
 
                 // 添加所有点作为顶点
                 foreach (var point in _figurePoints)
