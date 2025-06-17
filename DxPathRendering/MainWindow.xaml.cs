@@ -28,15 +28,25 @@ namespace DxPathRendering
 
             // create a path mesh builder
             PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
-            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 10f);
 
             for (int i = 0; i < 5; i++)
             {
-                var rad = MathF.PI / 2 + MathF.PI * 2 / 5 * i;
-                pathMeshBuilder.AddPoint(400 + MathF.Cos(rad) * 100f, 400 + MathF.Sin(rad) * 100f);
+                var baseX = Random.Shared.Next(50, 750);
+                var baseY = Random.Shared.Next(50, 750);
+                var radius = Random.Shared.Next(10, 100);
+                var strokeThickness = radius * 0.1f;
+
+                pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), strokeThickness);
+
+                for (int j = 0; j < 5; j++)
+                {
+                    var rad = MathF.PI / 2 + MathF.PI * 2 / 5 * j;
+                    pathMeshBuilder.AddPoint(baseX + MathF.Cos(rad) * radius, baseY + MathF.Sin(rad) * radius);
+                }
+
+                pathMeshBuilder.CloseFigure();
             }
 
-            pathMeshBuilder.CloseFigure();
             pathMeshBuilder.Build(out var verticesAndColors, out var indices);
 
             // create a rotation transform
