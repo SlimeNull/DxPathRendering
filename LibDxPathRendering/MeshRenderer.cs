@@ -22,6 +22,8 @@ namespace DxPathRendering
 
         ComPtr<ID3D11Device> _device;
         ComPtr<ID3D11DeviceContext> _deviceContext;
+        ComPtr<ID3D11Buffer> _vertexBuffer = default;
+        ComPtr<ID3D11Buffer> _indexBuffer = default;
         ComPtr<ID3D11Texture2D> _renderTarget;
         ComPtr<ID3D11Texture2D> _outputBuffer;
         ComPtr<ID3D11Texture2D> _resolveTexture; // 用于MSAA解析的中间纹理
@@ -34,8 +36,6 @@ namespace DxPathRendering
 
         private int _inputWidth;
         private int _inputHeight;
-        private float[]? _verticesAndColors;
-        private uint[]? _indices;
         private MatrixTransform _transform;
         private bool _transformSet;
         private bool _antialiasingEnabled; // 控制抗锯齿是否启用
@@ -302,32 +302,17 @@ namespace DxPathRendering
 
         public void SetMesh(ReadOnlySpan<MeshVertexAndColor> verticesAndColors, ReadOnlySpan<MeshTriangleIndices> indices)
         {
-            _verticesAndColors = new float[verticesAndColors.Length * 6];
-            _indices = new uint[indices.Length * 3];
-
-            MemoryMarshal.Cast<MeshVertexAndColor, float>(verticesAndColors).CopyTo(_verticesAndColors);
-            MemoryMarshal.Cast<MeshTriangleIndices, uint>(indices).CopyTo(_indices);
-        }
-
-        public void Render(Span<byte> bgraOutput)
-        {
             EnsureInitialized();
 
-            if (_verticesAndColors is null ||
-                _indices is null)
-            {
-                throw new InvalidOperationException("No mesh specified!");
-            }
+            var castedVerticesAndColors = MemoryMarshal.Cast<MeshVertexAndColor, float>(verticesAndColors);
+            var castedIndices = MemoryMarshal.Cast<MeshTriangleIndices, uint>(indices);
 
-            ComPtr<ID3D11Buffer> vertexBuffer = default;
-            ComPtr<ID3D11Buffer> indexBuffer = default;
-
-            fixed (float* vertexData = _verticesAndColors)
+            fixed (float* vertexData = castedVerticesAndColors)
             {
                 BufferDesc bufferDesc = new BufferDesc
                 {
                     BindFlags = (uint)BindFlag.VertexBuffer,
-                    ByteWidth = (uint)(sizeof(float) * _verticesAndColors.Length),
+                    ByteWidth = (uint)(sizeof(float) * castedVerticesAndColors.Length),
                     CPUAccessFlags = 0,
                     MiscFlags = 0,
                     Usage = Usage.Default,
@@ -338,15 +323,15 @@ namespace DxPathRendering
                     PSysMem = vertexData,
                 };
 
-                _device.CreateBuffer(in bufferDesc, in data, ref vertexBuffer);
+                _device.CreateBuffer(in bufferDesc, in data, ref _vertexBuffer);
             }
 
-            fixed (uint* indexData = _indices)
+            fixed (uint* indexData = castedIndices)
             {
                 BufferDesc bufferDesc = new BufferDesc
                 {
                     BindFlags = (uint)BindFlag.IndexBuffer,
-                    ByteWidth = (uint)(sizeof(uint) * _indices.Length),
+                    ByteWidth = (uint)(sizeof(uint) * castedIndices.Length),
                     CPUAccessFlags = 0,
                     MiscFlags = 0,
                     Usage = Usage.Default,
@@ -357,7 +342,18 @@ namespace DxPathRendering
                     PSysMem = indexData,
                 };
 
-                _device.CreateBuffer(in bufferDesc, in data, ref indexBuffer);
+                _device.CreateBuffer(in bufferDesc, in data, ref _indexBuffer);
+            }
+        }
+
+        public void Render(Span<byte> bgraOutput)
+        {
+            EnsureInitialized();
+
+            if (_vertexBuffer.Handle == null ||
+                _indexBuffer.Handle == null)
+            {
+                throw new InvalidOperationException("No mesh specified!");
             }
 
             if (bgraOutput.Length != (OutputWidth * OutputHeight * 4))
@@ -438,15 +434,15 @@ namespace DxPathRendering
             uint vertexStride = sizeof(float) * 2 + 4;
             uint vertexOffset = 0;
 
-            _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in vertexStride, in vertexOffset);
-            _deviceContext.IASetIndexBuffer(indexBuffer, Format.FormatR32Uint, 0);
+            _deviceContext.IASetVertexBuffers(0, 1, ref _vertexBuffer, in vertexStride, in vertexOffset);
+            _deviceContext.IASetIndexBuffer(_indexBuffer, Format.FormatR32Uint, 0);
 
             // 清除渲染目标视图
             //float[] clearColor = new float[4] { 0.0f, 0.0f, 0.0f, 0.0f };
             //_deviceContext.ClearRenderTargetView(renderTargetView, in clearColor[0]);
 
             // 绘制
-            _deviceContext.DrawIndexed((uint)_indices.Length, 0, 0);
+            _deviceContext.DrawIndexed((uint)300, 0, 0);
 
             // 如果启用抗锯齿，需要先解析MSAA纹理到非MSAA纹理
             if (_antialiasingEnabled && _resolveTexture.Handle != null)
@@ -478,8 +474,6 @@ namespace DxPathRendering
 
             _deviceContext.Unmap(_outputBuffer, 0);
 
-            vertexBuffer.Dispose();
-            indexBuffer.Dispose();
             rasterizerState.Dispose();
             renderTargetView.Dispose();
         }
@@ -494,6 +488,8 @@ namespace DxPathRendering
         {
             _device.DisposeIfNotNull();
             _deviceContext.DisposeIfNotNull();
+            _vertexBuffer.DisposeIfNotNull();
+            _indexBuffer.DisposeIfNotNull();
             _renderTarget.DisposeIfNotNull();
             _outputBuffer.DisposeIfNotNull();
             _resolveTexture.DisposeIfNotNull(); // 释放MSAA解析纹理

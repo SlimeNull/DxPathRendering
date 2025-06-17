@@ -6,13 +6,9 @@ using System.Threading.Tasks;
 
 namespace DxPathRendering
 {
-    public record struct MeshVertexAndColor(MeshVertex Vertex, MeshColor Color)
+    public record struct MeshVertexAndColor(float X, float Y, byte R, byte G, byte B, byte A)
     {
-        public MeshVertexAndColor(float x, float y, byte r, byte g, byte b, byte a)
-            : this(new MeshVertex(x, y), new MeshColor(r, g, b, a))
-        {
 
-        }
     }
 
     public record struct MeshVertex(float X, float Y);
