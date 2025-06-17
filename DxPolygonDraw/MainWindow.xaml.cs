@@ -23,6 +23,10 @@ namespace DxPathRendering
 
         private unsafe void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            // create a WriteableBitmap for rendering
+            WriteableBitmap bitmap = new WriteableBitmap(800, 800, 96, 96, PixelFormats.Bgra32, null);
+
+            // create a path mesh builder
             PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
             pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 10f);
 
@@ -33,16 +37,15 @@ namespace DxPathRendering
             }
 
             pathMeshBuilder.CloseFigure();
-
             pathMeshBuilder.Build(out var verticesAndColors, out var indices);
 
-            WriteableBitmap bitmap = new WriteableBitmap(800, 800, 96, 96, PixelFormats.Bgra32, null);
-            bitmap.Lock();
-
+            // create a rotation transform
             RotateTransform rotateTransform = new RotateTransform(180, 400, 400);
 
+            // create a mesh renderer
             MeshRenderer renderer = new MeshRenderer(800, 800);
 
+            // transform, antialiasing, and mesh setup
             renderer.SetTransform(
                 new MatrixTransform(
                     (float)rotateTransform.Value.M11, 
@@ -54,11 +57,14 @@ namespace DxPathRendering
 
             renderer.SetAntialiasing(true);
             renderer.SetMesh(verticesAndColors, indices);
-            renderer.Render(new Span<byte>((void*)bitmap.BackBuffer, bitmap.BackBufferStride * bitmap.PixelHeight));
 
+            // render
+            bitmap.Lock();
+            renderer.Render(new Span<byte>((void*)bitmap.BackBuffer, bitmap.BackBufferStride * bitmap.PixelHeight));
             bitmap.AddDirtyRect(new Int32Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
             bitmap.Unlock();
 
+            // set the WriteableBitmap as the source of the Image control
             image.Source = bitmap;
         }
     }
