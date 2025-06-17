@@ -97,8 +97,8 @@ namespace DxPathRendering
                     float dy2 = next.Y - current.Y;
 
                     // 归一化向量
-                    float len1 = (float)Math.Sqrt(dx1 * dx1 + dy1 * dy1);
-                    float len2 = (float)Math.Sqrt(dx2 * dx2 + dy2 * dy2);
+                    float len1 = MathF.Sqrt(dx1 * dx1 + dy1 * dy1);
+                    float len2 = MathF.Sqrt(dx2 * dx2 + dy2 * dy2);
 
                     if (len1 > 0)
                     {
@@ -130,7 +130,7 @@ namespace DxPathRendering
                     // 计算角平分线向量
                     float nx = nx1 + nx2;
                     float ny = ny1 + ny2;
-                    float nlen = (float)Math.Sqrt(nx * nx + ny * ny);
+                    float nlen = MathF.Sqrt(nx * nx + ny * ny);
 
                     if (nlen > 0.0001f)  // 避免除以零
                     {
@@ -161,13 +161,13 @@ namespace DxPathRendering
                 {
                     // 外点
                     _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                        (float)_outerPointsCache[i].X, (float)_outerPointsCache[i].Y,
+                        _outerPointsCache[i].X, _outerPointsCache[i].Y,
                         _figureStrokeColor.R, _figureStrokeColor.G, _figureStrokeColor.B, _figureStrokeColor.A
                     ));
 
                     // 内点
                     _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                        (float)_innerPointsCache[i].X, (float)_innerPointsCache[i].Y,
+                        _innerPointsCache[i].X, _innerPointsCache[i].Y,
                         _figureStrokeColor.R, _figureStrokeColor.G, _figureStrokeColor.B, _figureStrokeColor.A
                     ));
                 }
@@ -217,7 +217,7 @@ namespace DxPathRendering
                         for (int i = 0; i < _figurePoints.Count; i++)
                         {
                             _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                                (float)_innerPointsCache[i].X, (float)_innerPointsCache[i].Y,
+                                _innerPointsCache[i].X, _innerPointsCache[i].Y,
                                 _figureFillColor.R, _figureFillColor.G, _figureFillColor.B, _figureFillColor.A
                             ));
                         }
@@ -243,7 +243,7 @@ namespace DxPathRendering
                 foreach (var point in _figurePoints)
                 {
                     _finalVerticesAndColors.Add(new MeshVertexAndColor(
-                        (float)point.X, (float)point.Y,
+                        point.X, point.Y,
                         _figureFillColor.R, _figureFillColor.G, _figureFillColor.B, _figureFillColor.A
                     ));
                 }
@@ -267,6 +267,14 @@ namespace DxPathRendering
         {
             verticesAndColors = _finalVerticesAndColors.ToArray();
             indices = _finalIndices.ToArray();
+
+            Reset();
+        }
+
+        public void BuildInto(List<MeshVertexAndColor> verticesAndColors, List<MeshTriangleIndices> indices)
+        {
+            verticesAndColors.AddRange(_finalVerticesAndColors);
+            indices.AddRange(_finalIndices);
 
             Reset();
         }
