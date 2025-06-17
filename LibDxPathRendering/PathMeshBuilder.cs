@@ -156,21 +156,6 @@ namespace DxPathRendering
                     }
                 }
 
-                // 预分配顶点和索引容量以避免动态增长
-                int requiredVertexCapacity = _finalVerticesAndColors.Count + _figurePoints.Count * 2;
-                if (_figureFill && _figureFillColor != _figureStrokeColor)
-                    requiredVertexCapacity += _figurePoints.Count; // 额外的填充点
-
-                if (_finalVerticesAndColors.Capacity < requiredVertexCapacity)
-                    _finalVerticesAndColors.Capacity = requiredVertexCapacity;
-
-                int requiredIndicesCapacity = _finalIndices.Count + _figurePoints.Count * 2;
-                if (_figureFill)
-                    requiredIndicesCapacity += (_figurePoints.Count - 2) * (_figureFillColor != _figureStrokeColor ? 2 : 1);
-
-                if (_finalIndices.Capacity < requiredIndicesCapacity)
-                    _finalIndices.Capacity = requiredIndicesCapacity;
-
                 // 添加所有内外点顶点
                 for (int i = 0; i < _figurePoints.Count; i++)
                 {
@@ -253,15 +238,6 @@ namespace DxPathRendering
             {
                 // 直接使用用户添加的点
                 uint baseIndex = (uint)_finalVerticesAndColors.Count;
-
-                // 预分配容量
-                int requiredVertexCapacity = _finalVerticesAndColors.Count + _figurePoints.Count;
-                if (_finalVerticesAndColors.Capacity < requiredVertexCapacity)
-                    _finalVerticesAndColors.Capacity = requiredVertexCapacity;
-
-                int requiredIndicesCapacity = _finalIndices.Count + _figurePoints.Count - 2;
-                if (_finalIndices.Capacity < requiredIndicesCapacity)
-                    _finalIndices.Capacity = requiredIndicesCapacity;
 
                 // 添加所有点作为顶点
                 foreach (var point in _figurePoints)

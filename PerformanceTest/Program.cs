@@ -4,8 +4,8 @@ using DxPathRendering;
 
 Console.WriteLine("Hello, World!");
 
-var canvasWidth = 800;
-var canvasHeight = 800;
+var canvasWidth = 2000;
+var canvasHeight = 2000;
 
 // create a buffer for rendering
 byte[] renderingBuffer = new byte[canvasWidth * canvasHeight * 4];
@@ -14,14 +14,14 @@ byte[] renderingBuffer = new byte[canvasWidth * canvasHeight * 4];
 PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
 
 // create a mesh renderer
-MeshRenderer renderer = new MeshRenderer(800, 800);
+MeshRenderer renderer = new MeshRenderer(canvasWidth, canvasHeight);
 
 int renderCount = 0;
 Stopwatch stopwatch = Stopwatch.StartNew();
 
 while (true)
 {
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 300000; i++)
     {
         var baseX = Random.Shared.Next(50, canvasWidth - 50);
         var baseY = Random.Shared.Next(50, canvasHeight - 50);
