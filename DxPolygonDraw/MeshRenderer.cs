@@ -37,6 +37,8 @@ namespace DxPathRendering
         private int _inputHeight;
         private float[]? _verticesAndColors;
         private uint[]? _indices;
+        private MatrixTransform _transform;
+        private bool _transformSet;
 
         public int OutputWidth { get; }
         public int OutputHeight { get; }
@@ -47,6 +49,15 @@ namespace DxPathRendering
             _instanceCount++;
             OutputWidth = outputWidth;
             OutputHeight = outputHeight;
+            // 默认为单位矩阵
+            _transform = new MatrixTransform(1, 0, 0, 1, 0, 0);
+            _transformSet = false;
+        }
+
+        public void SetTransform(MatrixTransform transform)
+        {
+            _transform = transform;
+            _transformSet = true;
         }
 
         private string GetShaderCode()
@@ -55,6 +66,7 @@ namespace DxPathRendering
                 cbuffer ScreenBuffer : register(b0)
                 {
                     float2 screenSize;  // width, height
+                    float3x3 transform; // 变换矩阵
                 };
 
                 struct vs_in 
@@ -73,10 +85,14 @@ namespace DxPathRendering
                 {
                     vs_out output;
                     
+                    // 应用变换矩阵
+                    float3 pos = float3(input.position, 1.0f);
+                    float3 transformedPos = mul(transform, pos);
+                    
                     // Convert from screen coordinates (0 to width/height) to clip space (-1 to 1)
                     float2 normalizedPos;
-                    normalizedPos.x = (input.position.x / screenSize.x) * 2.0f - 1.0f;
-                    normalizedPos.y = 1.0f - (input.position.y / screenSize.y) * 2.0f; // 反转Y轴，因为DirectX中Y轴向下
+                    normalizedPos.x = (transformedPos.x / screenSize.x) * 2.0f - 1.0f;
+                    normalizedPos.y = 1.0f - (transformedPos.y / screenSize.y) * 2.0f; // 反转Y轴，因为DirectX中Y轴向下
                     
                     output.position = float4(normalizedPos, 0.0f, 1.0f);
                     output.color = input.color;
@@ -201,11 +217,16 @@ namespace DxPathRendering
                 }
             }
 
-            // 创建常量缓冲区
+            // 创建常量缓冲区 - 现在需要更大空间来存储变换矩阵
+            // float2 screenSize + float3x3 transform (需要16字节对齐)
             BufferDesc constBufferDesc = new BufferDesc
             {
                 BindFlags = (uint)BindFlag.ConstantBuffer,
-                ByteWidth = 16, // 对齐到16字节（float2 = 8字节，但常量缓冲区需要16字节对齐）
+                // 常量缓冲区结构：
+                // float2 screenSize; (8字节，但会被填充到16字节)
+                // float3x3 transform; (9个float，36字节，但会被填充到48字节)
+                // 总共 64 字节
+                ByteWidth = 64,
                 CPUAccessFlags = (uint)CpuAccessFlag.Write,
                 Usage = Usage.Dynamic
             };
@@ -278,13 +299,37 @@ namespace DxPathRendering
                 throw new ArgumentException("Size not match", nameof(bgraOutput));
             }
 
-            // 更新常量缓冲区中的屏幕尺寸
+            // 更新常量缓冲区中的屏幕尺寸和变换矩阵
             MappedSubresource mappedConstBuffer = default;
             _deviceContext.Map(_constantBuffer, 0, Map.WriteDiscard, 0, ref mappedConstBuffer);
 
-            float* screenSizeData = (float*)mappedConstBuffer.PData;
-            screenSizeData[0] = OutputWidth;
-            screenSizeData[1] = OutputHeight;
+            float* bufferData = (float*)mappedConstBuffer.PData;
+
+            // 设置屏幕尺寸
+            bufferData[0] = OutputWidth;
+            bufferData[1] = OutputHeight;
+
+            // 从第16字节开始设置变换矩阵（按行主序）
+            float* matrixData = bufferData + 4; // 跳过前16字节（screenSize后面有填充）
+
+            // 在着色器中使用的3x3矩阵
+            // [ M11 M12 0 ]
+            // [ M21 M22 0 ]
+            // [ OffsetX OffsetY 1 ]
+            matrixData[0] = _transform.M11;
+            matrixData[1] = _transform.M12;
+            matrixData[2] = 0;
+            matrixData[3] = 0; // 填充
+
+            matrixData[4] = _transform.M21;
+            matrixData[5] = _transform.M22;
+            matrixData[6] = 0;
+            matrixData[7] = 0; // 填充
+
+            matrixData[8] = _transform.OffsetX;
+            matrixData[9] = _transform.OffsetY;
+            matrixData[10] = 1;
+            matrixData[11] = 0; // 填充
 
             _deviceContext.Unmap(_constantBuffer, 0);
 

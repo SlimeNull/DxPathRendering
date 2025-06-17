@@ -29,7 +29,7 @@ namespace DxPathRendering
             for (int i = 0; i < 5; i++)
             {
                 var rad = MathF.PI / 2 + MathF.PI * 2 / 5 * i;
-                pathMeshBuilder.AddPoint(200 + MathF.Cos(rad) * 100f, 200 + MathF.Sin(rad) * 100f);
+                pathMeshBuilder.AddPoint(400 + MathF.Cos(rad) * 100f, 400 + MathF.Sin(rad) * 100f);
             }
 
             pathMeshBuilder.CloseFigure();
@@ -39,7 +39,19 @@ namespace DxPathRendering
             WriteableBitmap bitmap = new WriteableBitmap(800, 800, 96, 96, PixelFormats.Bgra32, null);
             bitmap.Lock();
 
+            RotateTransform rotateTransform = new RotateTransform(180, 400, 400);
+
             MeshRenderer renderer = new MeshRenderer(800, 800);
+
+            renderer.SetTransform(
+                new MatrixTransform(
+                    (float)rotateTransform.Value.M11, 
+                    (float)rotateTransform.Value.M12, 
+                    (float)rotateTransform.Value.M21, 
+                    (float)rotateTransform.Value.M22, 
+                    (float)rotateTransform.Value.OffsetX, 
+                    (float)rotateTransform.Value.OffsetY));
+
             renderer.SetMesh(verticesAndColors, indices);
             renderer.Render(new Span<byte>((void*)bitmap.BackBuffer, bitmap.BackBufferStride * bitmap.PixelHeight));
 

@@ -7,7 +7,11 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800"
         Loaded="Window_Loaded">
-    <Grid>
-        <Image x:Name="image"/>
+    <Grid Background="Black">
+        <Grid Background="White"
+              VerticalAlignment="Center"
+              HorizontalAlignment="Center">
+            <Image x:Name="image"/>
+        </Grid>
     </Grid>
 </Window>
