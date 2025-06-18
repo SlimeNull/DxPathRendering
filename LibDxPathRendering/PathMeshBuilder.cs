@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -24,16 +25,162 @@ namespace DxPathRendering
         private List<Point> _innerPointsCache = new List<Point>();
         private List<Point> _outerPointsCache = new List<Point>();
 
-        private static bool IsClockwise(List<Point> points)
+        public static bool IsClockwise(List<Point> points)
         {
+            if (points.Count < 3)
+                return false;
+
+            // 处理向量长度为4的整数倍部分
+            int vectorSize = Vector<float>.Count / 2; // Vector中可以容纳的点对数
+            int vectorizableCount = (points.Count / vectorSize) * vectorSize;
+
+            Vector<float> sumVector = Vector<float>.Zero;
+
+            for (int i = 0; i < vectorizableCount; i += vectorSize)
+            {
+                // 准备向量数据
+                float[] xCurrent = new float[Vector<float>.Count];
+                float[] yCurrent = new float[Vector<float>.Count];
+                float[] xNext = new float[Vector<float>.Count];
+                float[] yNext = new float[Vector<float>.Count];
+
+                for (int j = 0; j < vectorSize; j++)
+                {
+                    int idx = i + j;
+                    Point current = points[idx];
+                    Point next = points[(idx + 1) % points.Count];
+
+                    int offset = j * 2;
+                    xCurrent[offset] = current.X;
+                    yCurrent[offset] = current.Y;
+                    xNext[offset] = next.X;
+                    yNext[offset] = next.Y;
+
+                    // 填充第二个元素
+                    xCurrent[offset + 1] = 0;
+                    yCurrent[offset + 1] = 0;
+                    xNext[offset + 1] = 0;
+                    yNext[offset + 1] = 0;
+                }
+
+                Vector<float> vXCurrent = new Vector<float>(xCurrent);
+                Vector<float> vYCurrent = new Vector<float>(yCurrent);
+                Vector<float> vXNext = new Vector<float>(xNext);
+                Vector<float> vYNext = new Vector<float>(yNext);
+
+                // (next.X - current.X) * (next.Y + current.Y)
+                Vector<float> vDiffX = Vector.Subtract(vXNext, vXCurrent);
+                Vector<float> vSumY = Vector.Add(vYNext, vYCurrent);
+                Vector<float> vProduct = Vector.Multiply(vDiffX, vSumY);
+
+                sumVector = Vector.Add(sumVector, vProduct);
+            }
+
+            // 累加向量中的所有元素
             double sum = 0;
-            for (int i = 0; i < points.Count; i++)
+            for (int i = 0; i < Vector<float>.Count; i++)
+            {
+                sum += sumVector[i];
+            }
+
+            // 处理剩余部分
+            for (int i = vectorizableCount; i < points.Count; i++)
             {
                 Point current = points[i];
                 Point next = points[(i + 1) % points.Count];
                 sum += (next.X - current.X) * (next.Y + current.Y);
             }
+
             return sum > 0;
+        }
+        public static void PolygonStroke(List<Point> points, List<Point> outputInnerPoints,
+                                        List<Point> outputOuterPoints, float thickness)
+        {
+            if (points.Count < 3)
+                return;
+
+            // 清空输出集合
+            outputInnerPoints.Clear();
+            outputOuterPoints.Clear();
+
+            // 首先判断多边形的方向（顺时针或逆时针）
+            bool isClockwise = IsClockwise(points);
+            float halfThickness = thickness / 2f;
+            // 预先计算所有点的前后关系
+            int count = points.Count;
+            Vector2[] vertices = new Vector2[count];
+            Vector2[] prevVectors = new Vector2[count];
+            Vector2[] nextVectors = new Vector2[count];
+            Vector2[] prevNormals = new Vector2[count];
+            Vector2[] nextNormals = new Vector2[count];
+
+            // 转换为Vector2并计算相邻边向量
+            for (int i = 0; i < count; i++)
+            {
+                vertices[i] = new Vector2(points[i].X, points[i].Y);
+
+                int prevIdx = (i + count - 1) % count;
+                int nextIdx = (i + 1) % count;
+
+                prevVectors[i] = vertices[i] - new Vector2(points[prevIdx].X, points[prevIdx].Y);
+                nextVectors[i] = new Vector2(points[nextIdx].X, points[nextIdx].Y) - vertices[i];
+
+                // 归一化
+                if (prevVectors[i] != Vector2.Zero)
+                    prevVectors[i] = Vector2.Normalize(prevVectors[i]);
+
+                if (nextVectors[i] != Vector2.Zero)
+                    nextVectors[i] = Vector2.Normalize(nextVectors[i]);
+
+                // 计算法向量
+                prevNormals[i] = new Vector2(-prevVectors[i].Y, prevVectors[i].X);
+                nextNormals[i] = new Vector2(-nextVectors[i].Y, nextVectors[i].X);
+
+                if (!isClockwise)
+                {
+                    prevNormals[i] = -prevNormals[i];
+                    nextNormals[i] = -nextNormals[i];
+                }
+            }
+
+            // 处理每个顶点
+            for (int i = 0; i < count; i++)
+            {
+                // 计算角平分线向量
+                Vector2 normal = prevNormals[i] + nextNormals[i];
+                float length = normal.Length();
+
+                if (length > 0.0001f)
+                {
+                    normal /= length;
+
+                    // 计算平分线长度修正因子
+                    float sinHalfAngle = length / 2;
+                    float offsetFactor = (sinHalfAngle != 0) ? (1.0f / sinHalfAngle) : 1.0f;
+
+                    // 应用偏移
+                    Vector2 offset = normal * halfThickness * offsetFactor;
+
+                    outputOuterPoints.Add(new Point(
+                        vertices[i].X + offset.X,
+                        vertices[i].Y + offset.Y));
+
+                    outputInnerPoints.Add(new Point(
+                        vertices[i].X - offset.X,
+                        vertices[i].Y - offset.Y));
+                }
+                else
+                {
+                    // 如果角平分线无法计算，则使用前一条边的法向量
+                    outputOuterPoints.Add(new Point(
+                        vertices[i].X + prevNormals[i].X * halfThickness,
+                        vertices[i].Y + prevNormals[i].Y * halfThickness));
+
+                    outputInnerPoints.Add(new Point(
+                        vertices[i].X - prevNormals[i].X * halfThickness,
+                        vertices[i].Y - prevNormals[i].Y * halfThickness));
+                }
+            }
         }
 
         public void BeginFigure(bool stroke, bool fill, MeshColor strokeColor, MeshColor fillColor, float strokeThickness)
@@ -68,93 +215,7 @@ namespace DxPathRendering
                 _innerPointsCache.Clear();
                 _outerPointsCache.Clear();
 
-                // 预分配容量以避免动态增长
-                if (_innerPointsCache.Capacity < _figurePoints.Count)
-                {
-                    _innerPointsCache.Capacity = _figurePoints.Count;
-                    _outerPointsCache.Capacity = _figurePoints.Count;
-                }
-
-                // 首先判断多边形的方向（顺时针或逆时针）
-                bool isClockwise = IsClockwise(_figurePoints);
-
-                // 生成内外点 - 使用多边形偏移算法
-                for (int i = 0; i < _figurePoints.Count; i++)
-                {
-                    int prevIndex = (i + _figurePoints.Count - 1) % _figurePoints.Count;
-                    int nextIndex = (i + 1) % _figurePoints.Count;
-
-                    Point prev = _figurePoints[prevIndex];
-                    Point current = _figurePoints[i];
-                    Point next = _figurePoints[nextIndex];
-
-                    // 计算当前边的方向向量
-                    float dx1 = current.X - prev.X;
-                    float dy1 = current.Y - prev.Y;
-
-                    // 计算下一条边的方向向量
-                    float dx2 = next.X - current.X;
-                    float dy2 = next.Y - current.Y;
-
-                    // 归一化向量
-                    float len1 = MathF.Sqrt(dx1 * dx1 + dy1 * dy1);
-                    float len2 = MathF.Sqrt(dx2 * dx2 + dy2 * dy2);
-
-                    if (len1 > 0)
-                    {
-                        dx1 /= len1;
-                        dy1 /= len1;
-                    }
-
-                    if (len2 > 0)
-                    {
-                        dx2 /= len2;
-                        dy2 /= len2;
-                    }
-
-                    // 计算两条边的法向量（始终指向多边形外部）
-                    float nx1 = -dy1;
-                    float ny1 = dx1;
-                    float nx2 = -dy2;
-                    float ny2 = dx2;
-
-                    if (!isClockwise)
-                    {
-                        // 如果是逆时针，翻转法向量方向
-                        nx1 = -nx1;
-                        ny1 = -ny1;
-                        nx2 = -nx2;
-                        ny2 = -ny2;
-                    }
-
-                    // 计算角平分线向量
-                    float nx = nx1 + nx2;
-                    float ny = ny1 + ny2;
-                    float nlen = MathF.Sqrt(nx * nx + ny * ny);
-
-                    if (nlen > 0.0001f)  // 避免除以零
-                    {
-                        nx /= nlen;
-                        ny /= nlen;
-
-                        // 计算平分线长度修正因子
-                        float sinHalfAngle = nlen / 2;
-                        float offsetFactor = (sinHalfAngle != 0) ? (1.0f / sinHalfAngle) : 1.0f;
-
-                        // 应用偏移 - 外点是向外偏移，内点是向内偏移
-                        float offsetX = nx * halfThickness * offsetFactor;
-                        float offsetY = ny * halfThickness * offsetFactor;
-
-                        _outerPointsCache.Add(new Point(current.X + offsetX, current.Y + offsetY));
-                        _innerPointsCache.Add(new Point(current.X - offsetX, current.Y - offsetY));
-                    }
-                    else
-                    {
-                        // 如果角平分线无法计算，则使用前一条边的法向量
-                        _outerPointsCache.Add(new Point(current.X + nx1 * halfThickness, current.Y + ny1 * halfThickness));
-                        _innerPointsCache.Add(new Point(current.X - nx1 * halfThickness, current.Y - ny1 * halfThickness));
-                    }
-                }
+                PolygonStroke(_figurePoints, _innerPointsCache, _outerPointsCache, _figureStrokeThickness);
 
                 // 添加所有内外点顶点
                 for (int i = 0; i < _figurePoints.Count; i++)
@@ -187,22 +248,12 @@ namespace DxPathRendering
                     _finalIndices.Add(new MeshTriangleIndices(outerCurrent, innerNext, outerNext));
                 }
 
-                // 如果有填充，使用已经添加的内点做填充
+                // 如果有填充
                 if (_figureFill)
                 {
                     // 计算内点的起始索引
-                    uint fillBaseIndex = baseIndex + 1; // 内点从baseIndex+1开始，步长为2
-
-                    // 生成填充的三角形索引
-                    // 使用扇形三角化，第一个内点作为中心点
-                    for (uint i = 1; i < _figurePoints.Count - 1; i++)
-                    {
-                        _finalIndices.Add(new MeshTriangleIndices(
-                            fillBaseIndex,  // 第一个内点
-                            fillBaseIndex + i * 2,  // 其他内点，步长为2
-                            fillBaseIndex + (i + 1) * 2
-                        ));
-                    }
+                    uint fillBaseIndex = baseIndex + 1; // 内点从 baseIndex+1开始，步长为2
+                    uint fillBaseIndexStep = 2;
 
                     // 如果填充颜色与描边颜色不同，需要额外处理
                     if (_figureFillColor.R != _figureStrokeColor.R ||
@@ -210,9 +261,6 @@ namespace DxPathRendering
                         _figureFillColor.B != _figureStrokeColor.B ||
                         _figureFillColor.A != _figureStrokeColor.A)
                     {
-                        // 添加相同位置但使用填充颜色的点
-                        uint colorFillBaseIndex = (uint)_finalVerticesAndColors.Count;
-
                         // 只添加内点，使用填充颜色
                         for (int i = 0; i < _figurePoints.Count; i++)
                         {
@@ -222,15 +270,19 @@ namespace DxPathRendering
                             ));
                         }
 
-                        // 用新添加的填充颜色点生成三角形
-                        for (uint i = 1; i < _figurePoints.Count - 1; i++)
-                        {
-                            _finalIndices.Add(new MeshTriangleIndices(
-                                colorFillBaseIndex,
-                                colorFillBaseIndex + i,
-                                colorFillBaseIndex + i + 1
-                            ));
-                        }
+                        fillBaseIndex = (uint)(baseIndex + _figurePoints.Count * 2);
+                        fillBaseIndexStep = 1;
+                    }
+
+                    // 生成填充的三角形索引
+                    // 使用扇形三角化，第一个内点作为中心点
+                    for (uint i = 1; i < _figurePoints.Count - 1; i++)
+                    {
+                        _finalIndices.Add(new MeshTriangleIndices(
+                            fillBaseIndex,  // 第一个内点
+                            fillBaseIndex + i * fillBaseIndexStep,  // 其他内点，步长为 fillBaseIndexStep
+                            fillBaseIndex + (i + 1) * fillBaseIndexStep
+                        ));
                     }
                 }
             }

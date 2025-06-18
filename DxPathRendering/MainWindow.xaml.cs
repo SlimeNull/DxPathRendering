@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Buffers.Text;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -29,23 +30,13 @@ namespace DxPathRendering
             // create a path mesh builder
             PathMeshBuilder pathMeshBuilder = new PathMeshBuilder();
 
-            for (int i = 0; i < 5; i++)
-            {
-                var baseX = Random.Shared.Next(50, 750);
-                var baseY = Random.Shared.Next(50, 750);
-                var radius = Random.Shared.Next(10, 100);
-                var strokeThickness = radius * 0.1f;
-
-                pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), strokeThickness);
-
-                for (int j = 0; j < 5; j++)
-                {
-                    var rad = MathF.PI / 2 + MathF.PI * 2 / 5 * j;
-                    pathMeshBuilder.AddPoint(baseX + MathF.Cos(rad) * radius, baseY + MathF.Sin(rad) * radius);
-                }
-
-                pathMeshBuilder.CloseFigure();
-            }
+            pathMeshBuilder.BeginFigure(true, true, new MeshColor(0, 0, 255, 255), new MeshColor(255, 0, 0, 255), 60);
+            pathMeshBuilder.AddPoint(200, 200);
+            pathMeshBuilder.AddPoint(600, 200);
+            pathMeshBuilder.AddPoint(500, 400);
+            pathMeshBuilder.AddPoint(600, 600);
+            pathMeshBuilder.AddPoint(200, 600);
+            pathMeshBuilder.CloseFigure();
 
             pathMeshBuilder.Build(out var verticesAndColors, out var indices);
 

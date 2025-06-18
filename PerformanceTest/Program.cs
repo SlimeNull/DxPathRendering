@@ -21,7 +21,7 @@ Stopwatch stopwatch = Stopwatch.StartNew();
 
 while (true)
 {
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 100000; i++)
     {
         var baseX = Random.Shared.Next(50, canvasWidth - 50);
         var baseY = Random.Shared.Next(50, canvasHeight - 50);
@@ -39,13 +39,14 @@ while (true)
         pathMeshBuilder.CloseFigure();
     }
 
-    pathMeshBuilder.Build(out var verticesAndColors, out var indices);
+    pathMeshBuilder.Reset();
+    //pathMeshBuilder.Build(out var verticesAndColors, out var indices);
 
-    renderer.SetAntialiasing(false);
-    renderer.SetMesh(verticesAndColors, indices);
+    //renderer.SetAntialiasing(false);
+    //renderer.SetMesh(verticesAndColors, indices);
 
     // render
-    renderer.Render(new Span<byte>(renderingBuffer));
+    //renderer.Render(new Span<byte>(renderingBuffer));
 
     renderCount++;
     if (stopwatch.ElapsedMilliseconds >= 1000)
